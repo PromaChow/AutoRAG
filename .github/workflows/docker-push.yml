@@ -1,95 +1,144 @@
 name: Docker Push
-
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 defaults:
   run:
     working-directory: ./autorag
-
 env:
-  DOCKER_REPO: "autoraghq/autorag"
-
+  DOCKER_REPO: autoraghq/autorag
 jobs:
-  check-version:
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.version_changed.outputs.changed }}
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4.2.0
-
-    - name: Get changed files
-      id: changed-files
-      uses: tj-actions/changed-files@v46
-
-    - name: Check for VERSION file change
-      id: version_changed
-      env:
-        ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
-      run: |
-        echo "changed=false" >> $GITHUB_OUTPUT
-        if echo "${ALL_CHANGED_FILES}" | grep -q 'VERSION'; then
-          echo "changed=true" >> $GITHUB_OUTPUT
-        fi
-
   build-and-push:
-    needs: check-version
     if: needs.check-version.outputs.changed == 'true'
+    needs: check-version
     runs-on: ubuntu-latest
+    steps:
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+      - name: Checkout code
+        uses: actions/checkout@v4.2.0
+      - name: Read VERSION file
+        run: echo "VERSION=$(cat autorag/VERSION)" >> $GITHUB_ENV
+      - id: measurement-3
+        name: Record Measurement After Read VERSION file
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Read VERSION file
+          task: get-measurement
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.7.1
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3.3.0
+        with:
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+      - id: meta
+        name: Extract metadata (tags, labels) for Docker
+        uses: docker/metadata-action@v5.5.1
+        with:
+          images: ${{ env.DOCKER_REPO }}
+          tags: 'type=raw,value=${{ env.VERSION }}-${{ matrix.variant }}
+
+            type=raw,value=${{ matrix.variant }},enable=${{ github.ref == format(''refs/heads/{0}'',
+            ''main'') }}
+
+            type=raw,value=latest-${{ matrix.variant }},enable=${{ github.ref == format(''refs/heads/{0}'',
+            ''main'') }}
+
+            '
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6.9.0
+        with:
+          build-args: 'TARGET_STAGE=${{ matrix.variant }}
+
+            '
+          context: .
+          file: Dockerfile.base
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          tags: ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }}
+      - name: Tag and push 'all' for production
+        run: 'docker pull ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION
+          }}
+
+          docker tag ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }}
+          ${{ env.DOCKER_REPO }}:${{matrix.variant}}-latest
+
+          docker push ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }}
+
+          docker push ${{ env.DOCKER_REPO }}:${{matrix.variant}}-latest
+
+          '
+      - id: measurement-9
+        name: Record Measurement After Tag and push 'all' for production
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Tag and push 'all' for production
+          task: get-measurement
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
     strategy:
       matrix:
-        variant: [api, parsing] # [ko, ja, dev, parsing, api]
+        variant:
+          - api
+          - parsing
+  check-version:
+    outputs:
+      changed: ${{ steps.version_changed.outputs.changed }}
+    runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4.2.0
-
-    - name: Read VERSION file
-      run: echo "VERSION=$(cat autorag/VERSION)" >> $GITHUB_ENV
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3.7.1
-
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3.3.0
-      with:
-        username: ${{ secrets.DOCKER_HUB_USERNAME }}
-        password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
-
-    - name: Extract metadata (tags, labels) for Docker
-      id: meta
-      uses: docker/metadata-action@v5.5.1
-      with:
-        images: ${{ env.DOCKER_REPO }}
-        tags: |
-          type=raw,value=${{ env.VERSION }}-${{ matrix.variant }}
-          type=raw,value=${{ matrix.variant }},enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
-          type=raw,value=latest-${{ matrix.variant }},enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
-
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v6.9.0
-      with:
-        context: .
-        file: Dockerfile.base
-        push: true
-        # push: ${{ github.event_name != 'pull_request' && matrix.variant != 'test' }}
-        tags: ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }}
-        labels: ${{ steps.meta.outputs.labels }}
-        build-args: |
-          TARGET_STAGE=${{ matrix.variant }}
-
-    - name: Tag and push 'all' for production
-      run: |
-        docker pull ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }}
-        docker tag ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }} ${{ env.DOCKER_REPO }}:${{matrix.variant}}-latest
-        docker push ${{ env.DOCKER_REPO }}:${{matrix.variant}}-${{ env.VERSION }}
-        docker push ${{ env.DOCKER_REPO }}:${{matrix.variant}}-latest
-
-    # - name: Update Docker Hub description
-    #   uses: peter-evans/dockerhub-description@v3
-    #   with:
-    #     username: ${{ secrets.DOCKER_HUB_USERNAME }}
-    #     password: ${{ secrets.DOCKER_HUB_PASSWORD }}
-    #     repository: ${{ env.DOCKER_REPO }}
-    #     short-description: ${{ github.event.repository.description }}
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+      - name: Checkout code
+        uses: actions/checkout@v4.2.0
+      - id: changed-files
+        name: Get changed files
+        uses: tj-actions/changed-files@v46
+      - env:
+          ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+        id: version_changed
+        name: Check for VERSION file change
+        run: "echo \"changed=false\" >> $GITHUB_OUTPUT\nif echo \"${ALL_CHANGED_FILES}\"\
+          \ | grep -q 'VERSION'; then\n  echo \"changed=true\" >> $GITHUB_OUTPUT\n\
+          fi\n"
+      - id: measurement-4
+        name: Record Measurement After Check for VERSION file change
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Check for VERSION file change
+          task: get-measurement
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json

@@ -1,5 +1,4 @@
 name: Sphinx build
-
 on:
   push:
     branches:
@@ -9,33 +8,97 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Install gcc
-      run: |
-        sudo apt-get install gcc
-    - name: Install uv
-      uses: astral-sh/setup-uv@v5
-    - name: Install Python 3.10
-      run: uv python install 3.10
-    - name: Install Venv
-      run: uv venv
-    - name: Install dependencies
-      run: |
-        uv pip install -r docs/requirements.txt
-    - name: Build HTML
-      run: |
-        uv run sphinx-build -b html docs/source docs/build/html
-    - name: Copy CNAME
-      run: |
-        cp docs/source/CNAME docs/build/html/CNAME
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: html-docs
-        path: docs/build/html/
-    - name: Deploy
-      uses: peaceiris/actions-gh-pages@v4
-      if: github.ref == 'refs/heads/main'
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: docs/build/html
+      - name: Start Energy Measurement
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: start-measurement
+      - uses: actions/checkout@v4
+      - name: Install gcc
+        run: 'sudo apt-get install gcc
+
+          '
+      - id: measurement-3
+        name: Record Measurement After Install gcc
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install gcc
+          task: get-measurement
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install Python 3.10
+        run: uv python install 3.10
+      - id: measurement-6
+        name: Record Measurement After Install Python 3.10
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install Python 3.10
+          task: get-measurement
+      - name: Install Venv
+        run: uv venv
+      - id: measurement-8
+        name: Record Measurement After Install Venv
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install Venv
+          task: get-measurement
+      - name: Install dependencies
+        run: 'uv pip install -r docs/requirements.txt
+
+          '
+      - id: measurement-10
+        name: Record Measurement After Install dependencies
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Install dependencies
+          task: get-measurement
+      - name: Build HTML
+        run: 'uv run sphinx-build -b html docs/source docs/build/html
+
+          '
+      - id: measurement-12
+        name: Record Measurement After Build HTML
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Build HTML
+          task: get-measurement
+      - name: Copy CNAME
+        run: 'cp docs/source/CNAME docs/build/html/CNAME
+
+          '
+      - id: measurement-14
+        name: Record Measurement After Copy CNAME
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          label: Copy CNAME
+          task: get-measurement
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-docs
+          path: docs/build/html/
+      - if: github.ref == 'refs/heads/main'
+        name: Deploy
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/build/html
+      - id: display-measurement
+        name: Display Energy Results
+        uses: green-coding-solutions/eco-ci-energy-estimation@862050e4f01f65b1436e5eca18ba4bd85562f0de
+        with:
+          json-output: true
+          task: display-results
+      - name: Save Total Energy Consumption Data
+        run: echo '${{ steps.final-measurement.outputs.data-total-json }}' > total_energy_consumption.json
+      - name: Upload Energy Consumption Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: total-energy-consumption
+          path: total_energy_consumption.json
